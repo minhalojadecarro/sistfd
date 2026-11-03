@@ -1,0 +1,73 @@
+/* Layout de Formulário Novo */
+.form-container { 
+  background: #fff; 
+  padding: 4px 10px; 
+  border-radius: 8px; 
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+}
+
+.form-wrapper { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 10px; /* Aumente ou diminua este valor para controlar a distância entre uma linha e outra */
+  background: #f9f9f9; 
+  padding: 10px; 
+  border-radius: 6px; 
+  margin-bottom: 4px;
+}
+
+/* Espaçamento interno e margens das linhas do formulário */
+.form-row { 
+  display: flex !important;
+  gap: 10px !important;
+  margin-bottom: 4px !important; /* Adiciona um respiro extra entre as linhas */
+}
+
+/* Campos de input e select compactos */
+.form-row input, .form-row select { 
+  padding: 5px 8px; 
+  margin-top: 1px; 
+  border: 1px solid #ccc; 
+  border-radius: 4px;
+  width: 100%; 
+  box-sizing: border-box; 
+  font-size: 0.9rem;
+}
+
+/* Ajuste da Toolbar */
+.toolbar { 
+  display: flex; 
+  gap: 15px; 
+  background: #e0e0e0; 
+  padding: 10px 15px; /* Aumentado um pouco o respiro da barra */
+  border-radius: 5px; 
+  align-items: center; 
+}
+
+.actions { 
+  flex-grow: 1; 
+  display: flex; 
+  gap: 8px; 
+}
+
+/* Aumentando a altura e o destaque dos botões de ação */
+.actions button { 
+  flex: 1; 
+  padding: 14px 10px; /* Altura vertical maior */
+  font-weight: bold;
+  cursor: pointer;
+  border: 1px solid #999;
+  font-size: 0.95rem;
+}
+
+/* Aumentando também os botões de navegação à esquerda */
+.nav-buttons { display: flex; gap: 4px; }
+.nav-buttons button { 
+  padding: 14px 16px; /* Altura proporcional aos botões de ação */
+  font-weight: bold; 
+  cursor: pointer; 
+  border: 1px solid #999;
+}
+
+.nav-buttons { display: flex; gap: 4px; }
+.nav-buttons button { padding: 6px 12px; font-weight: bold; cursor: pointer; }

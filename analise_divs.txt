@@ -1,0 +1,101 @@
+Linha 221 [saldo: 1]: <div class="header">
+Linha 223 [saldo: 1]: <div class="title">DESPACHO DE TRAMITAÇÃO DE PROCE
+Linha 224 [saldo: 0]: </div>
+Linha 225 [saldo: 0]: <div class="field"><span class="label">Paciente:</
+Linha 226 [saldo: 0]: <div class="field"><span class="label">Nº Processo
+Linha 227 [saldo: 0]: <div class="field"><span class="label">Data da Con
+Linha 228 [saldo: 0]: <div class="field"><span class="label">Data do Des
+Linha 229 [saldo: 0]: <div class="field"><span class="label">Parecer/Sta
+Linha 230 [saldo: 0]: <div class="field"><span class="label">Setor de Or
+Linha 232 [saldo: 1]: <div class="field" style="margin-top: 20px;">
+Linha 234 [saldo: 1]: <div class="box-texto">${item.texto_despacho}</div
+Linha 235 [saldo: 0]: </div>
+Linha 237 [saldo: 1]: <div class="footer">
+Linha 239 [saldo: 0]: </div>
+Linha 1214 [saldo: 1]: <div style={{ padding: '20px', fontFamily: 'Arial,
+Linha 1217 [saldo: 2]: <div style={{ display: 'flex', justifyContent: 'sp
+Linha 1225 [saldo: 3]: <div style={{ margin: '15px 0', padding: '10px', b
+Linha 1288 [saldo: 4]: <div style={{
+Linha 1298 [saldo: 5]: <div style={{ width: '100%' }}>
+Linha 1346 [saldo: 4]: </div>
+Linha 1347 [saldo: 3]: </div>
+Linha 1348 [saldo: 2]: </div>
+Linha 1352 [saldo: 3]: <div className="form-row">
+Linha 1469 [saldo: 2]: </div>
+Linha 1472 [saldo: 3]: <div className="form-row">
+Linha 1585 [saldo: 2]: </div>
+Linha 1588 [saldo: 3]: <div className="form-row">
+Linha 1641 [saldo: 4]: <div style={{
+Linha 1657 [saldo: 5]: <div
+Linha 1670 [saldo: 4]: </div>
+Linha 1673 [saldo: 5]: <div style={{ padding: '6px 10px', color: '#777', 
+Linha 1675 [saldo: 4]: </div>
+Linha 1677 [saldo: 3]: </div>
+Linha 1714 [saldo: 4]: <div style={{
+Linha 1730 [saldo: 5]: <div
+Linha 1743 [saldo: 4]: </div>
+Linha 1746 [saldo: 5]: <div style={{ padding: '6px 10px', color: '#777', 
+Linha 1748 [saldo: 4]: </div>
+Linha 1750 [saldo: 3]: </div>
+Linha 1794 [saldo: 2]: </div>
+Linha 1797 [saldo: 3]: <div className="form-row" style={{ backgroundColor
+Linha 1939 [saldo: 2]: </div>
+Linha 1942 [saldo: 3]: <div className="form-row">
+Linha 1964 [saldo: 4]: <div style={{
+Linha 1980 [saldo: 5]: <div
+Linha 1993 [saldo: 4]: </div>
+Linha 1996 [saldo: 5]: <div style={{ padding: '6px 10px', color: '#777', 
+Linha 1998 [saldo: 4]: </div>
+Linha 2000 [saldo: 3]: </div>
+Linha 2027 [saldo: 2]: </div>
+Linha 2030 [saldo: 3]: <div className="form-row">
+Linha 2084 [saldo: 2]: </div>
+Linha 2087 [saldo: 3]: <div className="form-row">
+Linha 2164 [saldo: 2]: </div>
+Linha 2167 [saldo: 3]: <div className="form-row">
+Linha 2224 [saldo: 2]: </div>
+Linha 2226 [saldo: 3]: <div className="toolbar">
+Linha 2227 [saldo: 4]: <div className="nav-buttons">
+Linha 2232 [saldo: 3]: </div>
+Linha 2233 [saldo: 4]: <div className="actions">
+Linha 2240 [saldo: 3]: </div>
+Linha 2241 [saldo: 2]: </div>
+Linha 2245 [saldo: 3]: <div style={{
+Linha 2257 [saldo: 4]: <div style={{
+Linha 2287 [saldo: 5]: <div style={{
+Linha 2295 [saldo: 6]: <div style={{ padding: '15px', textAlign: 'center'
+Linha 2297 [saldo: 5]: </div>
+Linha 2300 [saldo: 6]: <div
+Linha 2314 [saldo: 5]: </div>
+Linha 2317 [saldo: 6]: <div style={{ padding: '15px', textAlign: 'center'
+Linha 2319 [saldo: 5]: </div>
+Linha 2321 [saldo: 4]: </div>
+Linha 2323 [saldo: 5]: <div style={{ display: 'flex', justifyContent: 'fl
+Linha 2338 [saldo: 4]: </div>
+Linha 2339 [saldo: 3]: </div>
+Linha 2340 [saldo: 2]: </div>
+Linha 2348 [saldo: 3]: <div style={{
+Linha 2352 [saldo: 4]: <div style={{ backgroundColor: '#fff', borderRadiu
+Linha 2359 [saldo: 3]: </div>
+Linha 2360 [saldo: 2]: </div>
+Linha 2367 [saldo: 3]: <div style={{ position: 'fixed', top: 0, left: 0, 
+Linha 2368 [saldo: 4]: <div style={{ backgroundColor: '#fff', padding: '2
+Linha 2376 [saldo: 5]: <div style={{ backgroundColor: '#f8f9fa', padding:
+Linha 2396 [saldo: 6]: <div style={{ color: '#856404', backgroundColor: '
+Linha 2398 [saldo: 5]: </div>
+Linha 2400 [saldo: 6]: <div style={{ color: '#155724', backgroundColor: '
+Linha 2402 [saldo: 5]: </div>
+Linha 2404 [saldo: 4]: </div>
+Linha 2408 [saldo: 5]: <div style={{ margin: '15px 0' }}>
+Linha 2427 [saldo: 4]: </div>
+Linha 2429 [saldo: 5]: <div style={{ margin: '15px 0' }}>
+Linha 2438 [saldo: 4]: </div>
+Linha 2440 [saldo: 5]: <div style={{ display: 'flex', justifyContent: 'fl
+Linha 2470 [saldo: 4]: </div>
+Linha 2477 [saldo: 5]: <div style={{ maxHeight: '220px', overflowY: 'auto
+Linha 2510 [saldo: 6]: <div style={{ display: 'flex', justifyContent: 'ce
+Linha 2543 [saldo: 5]: </div>
+Linha 2550 [saldo: 4]: </div>
+Linha 2552 [saldo: 3]: </div>
+Linha 2553 [saldo: 2]: </div>
+Linha 2575 [saldo: 1]: </div>
