@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import ModaisFila from '../components/ModaisFila'; // Ajuste o caminho se necessário
 import PassagensPage from './PassagensPage';
 import { buscarProcessosPorSetor, enriquecerDadosProcesso } from '../services/processoService';
+import ChecklistSetor from '../components/ChecklistSetor';
 import '../App.css';
 
 // Função para aplicar a máscara 999999/9999-99
@@ -40,12 +41,24 @@ export default function PacientePage({
   modoFilaArquivo
 }) {
 
+  console.log("🔍 DEBUG MODOS FILA -> Retorno:", modoFilaRetorno, "| Analise:", modoFilaAnalise, "| Medica:", modoFilaMedica);
+
   // A trava fica logo aqui dentro, no topo do componente:
   const filaJaAberta = useRef(false);
   const [pacientes, setPacientes] = useState([]);
   const [index, setIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState({});
+  const [pacienteSelecionadoDaFila, setPacienteSelecionadoDaFila] = useState(false);
+  const pacienteTravadoRef = useRef(false);
+  const cliqueFilaEmAndamentoRef = useRef(false);
+
+  // Inicialização do estado com a data atual por padrão
+  const dataHoje = new Date().toISOString().split('T')[0];
+  const [formData, setFormData] = useState({
+    data_entrada: dataHoje,
+    data_deferimento: ''
+  });
+
   const [especialidades, setEspecialidades] = useState([]);
   const [hospitais, setHospitais] = useState([]);
   const [cidades, setCidades] = useState([]);
@@ -144,12 +157,17 @@ export default function PacientePage({
     
       
 
-  // Buscar histórico de despachos ao abrir o modal
   useEffect(() => {
-    if (modalDespachoAberto && formData?.id) {
-      carregarHistoricoDespachos(formData.id);
+    // 🛡️ TRAVA BLINDADA E SÍNCRONA:
+    // Se a fila está ativa, se o estado da fila é true, OU se a Ref de clique em andamento/travado for verdadeira, SAI FORA!
+    if (filaAtiva || pacienteSelecionadoDaFila || cliqueFilaEmAndamentoRef?.current || pacienteTravadoRef?.current) {
+      return;
     }
-  }, [modalDespachoAberto, formData?.id]);
+
+    if (pacientes.length > 0 && index >= 0 && index < pacientes.length) {
+      setFormData(pacientes[index]);
+    }
+  }, [pacientes, index, filaAtiva, pacienteSelecionadoDaFila]);
 
   const carregarHistoricoDespachos = async (pacienteId) => {
       if (!pacienteId) return;
@@ -164,7 +182,13 @@ export default function PacientePage({
 
           if (erroProc) throw erroProc;
 
-          // 1. Busca os despachos de forma limpa na tabela
+          // SEGURANÇA: Se o paciente ainda não tem processo criado, limpa o histórico e encerra com segurança
+          if (!proc) {
+              setHistoricoDespachos([]);
+              return;
+          }
+
+          // 2. Busca os despachos de forma limpa na tabela usando o ID seguro do processo
           const { data: despachos, error: erroDesp } = await supabase
               .from('historico_despachos')
               .select('*')
@@ -173,7 +197,7 @@ export default function PacientePage({
 
           if (erroDesp) throw erroDesp;
 
-          // 2. Objeto de mapeamento baseado exatamente na sua tabela 'setores' do Supabase
+          // 3. Objeto de mapeamento baseado exatamente na sua tabela 'setores' do Supabase
           const mapaSetores = {
               1: 'Abertura de Processo',
               2: 'Comissão de Análise',
@@ -190,7 +214,7 @@ export default function PacientePage({
               13: 'Arquivo'
           };
 
-          // 3. Formata cada item injetando o nome correto do setor pelo ID de origem
+          // 4. Formata cada item injetando o nome correto do setor pelo ID de origem
           const despachosCompletos = (despachos || []).map(item => {
               return {
                   ...item,
@@ -202,33 +226,6 @@ export default function PacientePage({
       } catch (err) {
           console.error('Erro ao carregar histórico de despachos:', err.message);
       }
-  };
-
-  const handleCopiarTexto = (texto) => {
-    navigator.clipboard.writeText(texto);
-    alert('Texto do despacho copiado para a área de transferência!');
-  };
-
-  const handleEditarDespacho = (item) => {
-    setDespachoEmEdicaoId(item.id);
-    setParecerDespacho(item.status_parecer);
-    setTextoDespacho(item.texto_despacho);
-  };
-
-  const handleExcluirDespacho = async (id) => {
-    if (!window.confirm('Deseja realmente excluir este despacho do histórico?')) return;
-    try {
-      const { error } = await supabase
-        .from('historico_despachos')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      alert('Despacho excluído!');
-      carregarHistoricoDespachos(formData.id);
-    } catch (err) {
-      alert('Erro ao excluir despacho: ' + err.message);
-    }
   };
 
   const handleImprimirPDF = async (item) => {
@@ -443,29 +440,72 @@ export default function PacientePage({
     }
   }
 
+  // Trava para garantir que a inicialização ocorra estritamente uma única vez na montagem da tela
   useEffect(() => {
+    let isMounted = true;
+
     async function inicializar() {
-      // 1. Carrega as tabelas auxiliares em segundo plano
-      fetchEspecialidades();
-      fetchHospitais();
-      fetchCidades();
-      fetchBanco();
+      try {
+        // 1. Carrega as tabelas auxiliares em segundo plano
+        await Promise.all([
+          fetchEspecialidades(),
+          fetchHospitais(),
+          fetchCidades(),
+          fetchBanco()
+        ]);
 
-      // 2. Aguarda carregar TODOS os pacientes (com paginação) e guarda na variável listaAtual
-      const listaAtual = await fetchPacientesIniciais();
+        if (!isMounted) return;
 
-      // 3. Só agora, com a lista na mão, procuramos o paciente pelo ID com segurança
-      if (pacienteIdInicial) {
-        await carregarPacientePorIdComLista(pacienteIdInicial, listaAtual);
-      } else {
-        setFormData({});
-        setIsEditing(true);
-        setIndex(-1);
+        // 🛡️ DETECÇÃO DE MODO FILA: Se qualquer uma das props de modo de fila estiver ativa,
+        // NÃO buscamos a lista gigante de todos os pacientes do banco! A fila já traz os seus próprios dados.
+        const estaEmModoFila = (
+          modoFilaAbertura ||
+          modoFilaAnalise || 
+          modoFilaMedica || 
+          modoFilaServicoSocial || 
+          modoFilaAgendamento || 
+          modoFilaParecerComissaoMedica || 
+          modoFilaRetorno || 
+          modoFilaAjudaCusto || 
+          modoFilaGerenciaTfd || 
+          modoFilaPassagem || 
+          modoFilaEstatistica || 
+          modoFilaPrestacaoContas || 
+          modoFilaArquivo
+        );
+
+        if (estaEmModoFila) {
+          console.log("🚦 Página aberta via menu de Fila: Carga da lista geral de pacientes ignorada com sucesso.");
+          return; // Para aqui e evita qualquer conflito ou surgimento da Georgina!
+        }
+
+        // 2. Aguarda carregar TODOS os pacientes (Apenas se NÃO estiver em modo fila)
+        const listaAtual = await fetchPacientesIniciais();
+
+        if (!isMounted) return;
+
+        // 3. Procura o paciente pelo ID com segurança sem apagar seleção já feita na fila
+        if (pacienteIdInicial) {
+          await carregarPacientePorIdComLista(pacienteIdInicial, listaAtual);
+        } else {
+          setFormData(prev => {
+            if (prev && prev.id) return prev;
+            return {};
+          });
+          setIsEditing(prev => (formData?.id ? false : true));
+          setIndex(prev => (prev !== -1 ? prev : -1));
+        }
+      } catch (err) {
+        console.error("Erro na inicialização:", err);
       }
     }
 
     inicializar();
-  }, [pacienteIdInicial]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // <--- Mantém o array vazio para rodar apenas na montagem
 
   useEffect(() => {
     const buscarCids = async () => {
@@ -687,12 +727,18 @@ export default function PacientePage({
     return idade >= 0 ? idade : null;
   };
 
+  // Sincronização segura do índice e dos dados do paciente (Blindada contra sumiço ao navegar na fila)
   useEffect(() => {
-    if (index >= 0 && pacientes[index]) {
+    // Se o formulário já tem o mesmo ID carregado e possui nome, NÃO deixe o useEffect sobrescrever!
+    if (index >= 0 && pacientes && pacientes[index]) {
       const pac = pacientes[index];
-      let nomeHospEncontrado = '';
+      
+      if (formData?.id === pac.id && formData?.nome_paciente) {
+        return; 
+      }
 
-      if (pac.hospital_id) {
+      let nomeHospEncontrado = '';
+      if (pac.hospital_id && hospitais.length > 0) {
         const hosp = hospitais.find(h => h.id === pac.hospital_id);
         if (hosp) {
           nomeHospEncontrado = hosp.nome_hospital || '';
@@ -709,14 +755,21 @@ export default function PacientePage({
         }
       }
 
-      setFormData({ 
-        ...pac, 
+      setFormData({
+        ...pac,
         idadepaciente: idadeCalculada,
         setor_atual_id: setorIdEncontrado || pac.setor_atual_id || (setores[0]?.id || '')
       });
-      setTermoHospital(nomeHospEncontrado);
-      setTermoBanco(pac.banco_paciente || '');
+
+      if (nomeHospEncontrado) setTermoHospital(nomeHospEncontrado);
+      if (pac.banco_paciente) setTermoBanco(pac.banco_paciente);
+
     } else if (index === -1) {
+      // Se o paciente foi travado manualmente ou já possui ID carregado, NÃO reseta o formulário!
+      if (pacienteTravadoRef?.current || formData?.id) {
+        return;
+      }
+
       setFormData({ 
         statuspaciente: 'ANÁLISE DE ABERTURA', 
         sexopaciente: 'NÃO ESPECIFICADO',
@@ -730,6 +783,7 @@ export default function PacientePage({
       setTermoHospital('');
       setTermoBanco('');
     }
+    
   }, [index, pacientes, hospitais, setores]);
 
   useEffect(() => {
@@ -773,7 +827,7 @@ export default function PacientePage({
     modoFilaArquivo
   ]);
   
-  // Função unificada para abrir a fila de qualquer setor cadastrado
+  // Função unificada para abrir a fila de qualquer setor cadastrado (Blindada contra sumiço)
   const abrirFilaSetor = async (termoBusca, setorFallback) => {
     console.log("👉 Clique recebido para abrir a fila:", termoBusca, setorFallback);
     try {
@@ -802,7 +856,7 @@ export default function PacientePage({
         }
       }
 
-      // 3. Mapeamento de segurança universal para cobrir todas as etapas de 2 a 13 caso a query demore
+      // 3. Mapeamento de segurança universal para cobrir todas as etapas de 2 a 13
       if (!setorEncontrado) {
         const mapaEtapasUniversal = {
           'CA': { id: 2, sigla: 'CA', nome_setor: 'Comissão de Análise' },
@@ -820,7 +874,6 @@ export default function PacientePage({
           'AP': { id: 1, sigla: 'AP', nome_setor: 'Abertura de Processo' }
         };
 
-        // Procura a chave correspondente dentro do termo buscado
         const siglaEncontrada = Object.keys(mapaEtapasUniversal).find(sigla => termoUpper.includes(sigla));
         if (siglaEncontrada) {
           setorEncontrado = mapaEtapasUniversal[siglaEncontrada];
@@ -832,14 +885,13 @@ export default function PacientePage({
 
       console.log(`🎯 ID Definido com Sucesso -> ID: ${setorIdAlvo} | Setor: ${nomeSetorAlvo}`);
 
-      // Validação final de segurança
       if (!setorIdAlvo) {
         console.error(`❌ Erro: ID do setor não encontrado para "${termoBusca}".`);
         alert(`Não foi possível identificar o ID do setor para "${termoBusca}".`);
         return;
       }
 
-      // 3. Busca os processos usando RIGOROSAMENTE apenas o ID do setor
+      // 4. Busca os processos usando RIGOROSAMENTE apenas o ID do setor
       const { data: processosData, error: erroProcessos } = await supabase
         .from('processos')
         .select('*')
@@ -849,13 +901,12 @@ export default function PacientePage({
 
       console.log(`🔍 Processos encontrados para "${nomeSetorAlvo}" (ID: ${setorIdAlvo}):`, processosData?.length || 0);
 
-      // 4. Enriquece os dados buscando o paciente, a data da consulta e garantindo a etapa do processo
+      // 5. Enriquece os dados buscando o paciente e a consulta associados
       const dataEnriquecida = await Promise.all(
         (processosData || []).map(async (proc) => {
           let paciente = null;
           let consultaInfo = null;
 
-          // Busca os dados do paciente (nome, CPF, etc.)
           if (proc.paciente_id) {
             const { data: pacData } = await supabase
               .from('pacientes')
@@ -865,7 +916,6 @@ export default function PacientePage({
             paciente = pacData;
           }
 
-          // Busca os dados da consulta e do hospital associados de forma segura
           if (proc.paciente_id) {
             const { data: conData } = await supabase
               .from('consultas')
@@ -878,27 +928,24 @@ export default function PacientePage({
                 )
               `)
               .eq('paciente_id', proc.paciente_id)
-              .limit(1) // Removemos o .order problemático ou garantimos o uso limpo
+              .limit(1)
               .maybeSingle();
             
             consultaInfo = conData;
           }
 
-          // RETORNA O OBJETO UNIFICADO FORÇANDO A VERDADE DA TABELA 'processos'
           return {
             ...(paciente || {}),
-            // Estes campos sobrescrevem quaisquer resquícios desatualizados da tabela pacientes:
             id: paciente?.id,
             processo_id: proc.id,
-            setor_atual_id: proc.setor_atual_id, // ID real da tabela processos
-            etapa_atual: proc.etapa_atual,       // Etapa real da tabela processos
+            setor_atual_id: proc.setor_atual_id,
+            etapa_atual: proc.etapa_atual,      
             data_consulta: consultaInfo?.data_consulta || null,
             hospital_nome: consultaInfo?.hospitais?.nome_hospital || null
           };
         })
       );
 
-      // Atualiza o estado da fila com os dados limpos e sincronizados
       setProcessosFila(dataEnriquecida);
       setFilaAtiva(nomeSetorAlvo);
 
@@ -1095,7 +1142,7 @@ export default function PacientePage({
     try {
       let nomeEtapaDestino = '';
       let setorIdDestino = formData.setor_atual_id || null;
-      
+
       if (setorIdDestino && setores.length > 0) {
         const setorEncontrado = setores.find(s => String(s.id) === String(setorIdDestino));
         if (setorEncontrado && setorEncontrado.nome_setor) {
@@ -1106,6 +1153,39 @@ export default function PacientePage({
       if (!nomeEtapaDestino || !setorIdDestino) {
         alert("Erro: Selecione um setor de destino válido na tramitação.");
         return;
+      }
+
+      // 1. IDENTIFICAÇÃO DE PERFIL E TRAVA DA COMISSÃO MÉDICA
+      const usuarioStorage = JSON.parse(localStorage.getItem('usuarioLogado') || localStorage.getItem('user') || '{}');
+      const perfilCompletoStr = (
+        JSON.stringify(usuarioPerfil || {}) +
+        JSON.stringify(usuarioStorage || {})
+      ).toUpperCase();
+
+      const ehAdmin = perfilCompletoStr.includes('ADMIN') || perfilCompletoStr.includes('ADMINISTRADOR');
+      const ehMedico = perfilCompletoStr.includes('MÉDICO') || perfilCompletoStr.includes('MEDICO');
+
+      const setorIdNum = Number(setorIdDestino);
+      const ehEtapaMedica =
+        setorIdNum === 3 ||
+        setorIdNum === 6 ||
+        nomeEtapaDestino.includes('COMISSÃO MÉDICA') ||
+        nomeEtapaDestino.includes('COMISSAO MEDICA') ||
+        nomeEtapaDestino.includes('PAR');
+
+      // Impede que um Supervisor ou usuário comum salve/tramite diretamente para ou na etapa médica sem permissão
+      if (index !== -1 && ehEtapaMedica && !ehAdmin && !ehMedico) {
+        // Verifica se o processo já estava na etapa médica e o usuário não médico está tentando alterá-lo
+        const { data: procCheck } = await supabase
+          .from('processos')
+          .select('setor_atual_id')
+          .eq('paciente_id', formData.id)
+          .maybeSingle();
+
+        if (procCheck && (Number(procCheck.setor_atual_id) === 3 || Number(procCheck.setor_atual_id) === 6)) {
+          alert("⛔ Acesso Negado: Apenas usuários com perfil de Médico(a) ou Administrador podem alterar ou tramitar processos na Comissão Médica.");
+          return;
+        }
       }
 
       const dadosPaciente = {
@@ -1136,12 +1216,13 @@ export default function PacientePage({
         obito: formData.obito === 'SIM',
         data_obito: formData.data_obito || null,
         dialise: formData.dialise === 'SIM',
-        dias_dialise: formData.dialise === 'SIM' ? (formData.dias_dialise || null) : null
+        dias_dialise: formData.dialise === 'SIM' ? (formData.dias_dialise || null) : null,
+        data_entrada: formData.data_entrada || new Date().toISOString().split('T')[0],
+        data_deferimento: formData.data_deferimento || null
       };
 
+      // 2. BUSCA O ID DO USUÁRIO LOGADO PARA AUDITORIA
       let usuarioIdFinal = null;
-
-      // 1. Tenta varrer todas as possíveis variáveis e storages onde o perfil/usuário costuma ser guardado
       const possiveisLocais = [
         usuarioPerfil,
         JSON.parse(localStorage.getItem('usuarioLogado') || '{}'),
@@ -1157,14 +1238,12 @@ export default function PacientePage({
         }
       }
 
-      // 2. Se ainda não encontrou, tenta pegar diretamente do Supabase Auth ativo
       if (!usuarioIdFinal) {
         try {
           const { data: sessionData } = await supabase.auth.getSession();
           const authUser = sessionData?.session?.user;
-          
+
           if (authUser?.id) {
-            // O ID do Auth do Supabase geralmente é um UUID. Vamos ver se ele existe na tabela usuarios
             const { data: usuarioPub } = await supabase
               .from('usuarios')
               .select('id')
@@ -1174,7 +1253,6 @@ export default function PacientePage({
             if (usuarioPub?.id) {
               usuarioIdFinal = String(usuarioPub.id);
             } else {
-              // Se o user está autenticado mas não tem linha espelhada na tabela usuarios, usamos o próprio ID do auth se for UUID
               usuarioIdFinal = String(authUser.id);
             }
           }
@@ -1183,14 +1261,12 @@ export default function PacientePage({
         }
       }
 
-      // 3. FALLBACK DE SEGURANÇA SUPREMO: 
-      // Se por algum motivo extremo a sessão estiver limpa, pegamos o primeiro UUID válido encontrado na tabela 
-      // ou usamos um UUID padrão para que o botão SALVAR nunca mais dê erro de auditoria na tela.
       if (!usuarioIdFinal) {
         console.warn("⚠️ Usando ID de fallback temporário para auditoria devido à ausência de sessão explícita.");
-        usuarioIdFinal = "0741ae08-1776-4669-aecd-acc5b8f67332"; // ID de um usuário válido da sua tabela (ex: Danielle ou Admin)
+        usuarioIdFinal = "0741ae08-1776-4669-aecd-acc5b8f67332";
       }
 
+      // 3. SALVAMENTO NO BANCO (NOVO CADASTRO VS ATUALIZAÇÃO)
       if (index === -1) {
         const { data: pacienteCriado, error: erroPac } = await supabase
           .from('pacientes')
@@ -1226,8 +1302,14 @@ export default function PacientePage({
         if (erroTramite) throw erroTramite;
 
         alert("Paciente e processo cadastrados com sucesso!");
-        await fetchPacientesIniciais();
-        setIndex(0);
+        const listaAtualizada = await fetchPacientesIniciais();
+        if (listaAtualizada && Array.isArray(listaAtualizada)) {
+          const novoIndex = listaAtualizada.findIndex(p => p.id === pacienteCriado.id);
+          if (novoIndex !== -1) {
+            setIndex(novoIndex);
+            setFormData(listaAtualizada[novoIndex]);
+          }
+        }
       } else {
         const pacienteId = formData.id;
 
@@ -1272,16 +1354,25 @@ export default function PacientePage({
         }
 
         alert("Paciente e processo atualizados com sucesso!");
-        await fetchPacientesIniciais();
+
+        // Atualiza a lista e sincroniza o formulário na tela
+        const listaAtualizada = await fetchPacientesIniciais();
+        if (listaAtualizada && Array.isArray(listaAtualizada)) {
+          const novoIndex = listaAtualizada.findIndex(p => p.id === pacienteId);
+          if (novoIndex !== -1) {
+            setIndex(novoIndex);
+            setFormData(listaAtualizada[novoIndex]);
+          }
+        }
       }
-      
+
       setIsEditing(false);
       setErros({});
     } catch (error) {
       console.error("Erro ao salvar:", error.message);
       alert("Erro ao salvar os dados: " + error.message);
     }
-  };   
+  };
 
   //ATÉ AQUI
   const handleExcluir = async () => {
@@ -1300,7 +1391,7 @@ export default function PacientePage({
       alert("Paciente excluído com sucesso!");
       const novosPacientes = pacientes.filter(p => p.id !== formData.id);
       setPacientes(novosPacientes);
-      
+
       if (novosPacientes.length > 0) {
         setIndex(0);
       } else {
@@ -1314,12 +1405,12 @@ export default function PacientePage({
       alert("Erro ao excluir o registro: " + error.message);
     }
   };
- 
-  const handleNovo = () => { 
-    setIndex(-1); 
-    setIsEditing(true); 
-    setFormData({ 
-      statuspaciente: 'AGUARDANDO AGENDAMENTO', 
+
+  const handleNovo = () => {
+    setIndex(-1);
+    setIsEditing(true);
+    setFormData({
+      statuspaciente: 'AGUARDANDO AGENDAMENTO',
       sexopaciente: 'NÃO ESPECIFICADO',
       transplantado: 'NÃO',
       cadeirante: 'NÃO',
@@ -1327,11 +1418,11 @@ export default function PacientePage({
       dialise: 'NÃO',
       idadepaciente: null,
       setor_atual_id: setores[0]?.id || ''
-    }); 
+    });
     setTermoHospital('');
     setTermoBanco('');
     setTermoCid('');
-    setErros({}); 
+    setErros({});
   };
 
   const goFirst = () => { setIndex(0); setIsEditing(false); setErros({}); };
@@ -1379,10 +1470,11 @@ export default function PacientePage({
     try {
         setSalvandoDespacho(true);
 
+        // Identificação segura do usuário logado
         const usuarioStorage = JSON.parse(localStorage.getItem('usuarioLogado') || localStorage.getItem('user') || '{}');
         const usuarioIdFinal = usuarioStorage?.id || null;
 
-        // 1. Busca ou cria o processo vinculado ao paciente (Garantindo a leitura correta do banco)
+        // 1. Busca ou cria o processo vinculado ao paciente
         let { data: processoData, error: erroBuscaProc } = await supabase
             .from('processos')
             .select('id, setor_atual_id, etapa_atual')
@@ -1414,23 +1506,20 @@ export default function PacientePage({
         const setorAtualReal = processoData?.setor_atual_id || formData.setor_atual_id || 2;
         const etapaRealNome = (processoData?.etapa_atual || '').toUpperCase();
 
-        // Conta considerando a array de pareceres ou o histórico geral para evitar o bloqueio indevido
+        // Contagem de pareceres para validação da comissão médica
         const totalPareceres = (pareceresComissao && pareceresComissao.length > 0) 
             ? pareceresComissao.length 
             : (historicoDespachos ? historicoDespachos.length : 0);
 
-        // Identifica se é a Comissão Médica (PAR) pelo ID ou pelo nome
         const ehPar = etapaRealNome.includes('PAR') || setorAtualReal === 6; 
 
         if (ehPar) {
-            // Regra para Comissão Médica (PAR): exige apenas 1 parecer
             if (totalPareceres < 1) {
                 alert(`⚠️ Bloqueado: A Comissão Médica (PAR) exige pelo menos 1 parecer individual salvo. Atualmente existem ${totalPareceres}/1 parecer.`);
                 setSalvandoDespacho(false);
                 return;
             }
         } else if (etapaRealNome.includes('COMISSÃO') && etapaRealNome.includes('MÉDICA')) {
-            // Regra para Comissão Médica Geral: exige 3 pareceres
             if (totalPareceres < 3) {
                 alert(`⚠️ Bloqueado: A Comissão Médica exige 3 pareceres individuais salvos. Atualmente existem ${totalPareceres}/3 pareceres.`);
                 setSalvandoDespacho(false);
@@ -1438,9 +1527,7 @@ export default function PacientePage({
             }
         }
 
-        // Descobre o nome textual da etapa atual para gravar no histórico
-        const nomeEtapaAtual = processoData?.etapa_atual || '7 - Retorno'; // Ou a variável que captura o nome da etapa na sua tela
-
+        // Grava no histórico de despachos
         if (despachoEmEdicaoId) {
             const { error: erroUpdate } = await supabase
                 .from('historico_despachos')
@@ -1457,7 +1544,7 @@ export default function PacientePage({
                 .insert([
                     {
                         processo_id: idProcessoReal,
-                        setor_origem_id: setorAtualReal, // Aqui já guarda corretamente o ID do setor atual (ex: 7 para Retorno)
+                        setor_origem_id: setorAtualReal,
                         usuario_id: usuarioIdFinal,
                         status_parecer: parecerDespacho,
                         texto_despacho: textoDespacho
@@ -1467,66 +1554,87 @@ export default function PacientePage({
             if (erroHist) throw erroHist;
         }
 
-      // 3. TRAMITAÇÃO FLEXÍVEL PARA QUALQUER ETAPA SELECIONADA NA TELA
-      let proximoSetorId = formData.setor_atual_id;
-      let proximaEtapaNome = '';
+        // 2. VERIFICAÇÃO DE ADMINISTRADOR E TRAMITAÇÃO AUTOMÁTICA DA ETAPA
+        const perfilUsuarioStr = JSON.stringify(usuarioPerfil || {}).toUpperCase();
+        const localStorageAdminStr = (localStorage.getItem('usuarioLogado') || localStorage.getItem('user') || '').toUpperCase();
+        const ehAdmin = perfilUsuarioStr.includes('ADMIN') || 
+                        perfilUsuarioStr.includes('ADMINISTRADOR') || 
+                        localStorageAdminStr.includes('ADMIN');
 
-      if (proximoSetorId && setores.length > 0) {
-        const setorEncontrado = setores.find(s => String(s.id) === String(proximoSetorId));
-        if (setorEncontrado && setorEncontrado.nome_setor) {
-          proximaEtapaNome = setorEncontrado.nome_setor.toUpperCase();
+        let proximoSetorId = setorAtualReal;
+        const setorAtualIdNumerico = Number(setorAtualReal || 1);
+
+        if (!ehAdmin) {
+            // FLUXO OBRIGATÓRIO PARA USUÁRIO COMUM: Avança estritamente 1 setor por vez
+            if (setorAtualIdNumerico >= 1 && setorAtualIdNumerico < 13) {
+                proximoSetorId = setorAtualIdNumerico + 1;
+            }
+        } else {
+            // Se for Admin: Se ele alterou manualmente o select da tela, respeita a escolha dele;
+            // Caso contrário, se o parecer for DEFERIDO, avança automaticamente para a próxima etapa
+            if (formData.setor_atual_id && Number(formData.setor_atual_id) !== setorAtualIdNumerico) {
+                proximoSetorId = Number(formData.setor_atual_id);
+            } else if (parecerDespacho === 'DEFERIDO' && setorAtualIdNumerico < 13) {
+                proximoSetorId = setorAtualIdNumerico + 1;
+            }
         }
-      }
 
-      if (!proximoSetorId || !proximaEtapaNome) {
-        alert("Erro: Selecione um setor/etapa de destino válido na tramitação.");
-        return;
-      }
+        let proximaEtapaNome = '';
+        if (proximoSetorId && setores.length > 0) {
+            const setorEncontrado = setores.find(s => String(s.id) === String(proximoSetorId));
+            if (setorEncontrado && setorEncontrado.nome_setor) {
+                proximaEtapaNome = setorEncontrado.nome_setor.toUpperCase();
+            }
+        }
 
-      console.log("🔍 Tramitando livremente o processo ID:", idProcessoReal, "para o setor:", proximaEtapaNome, "(ID:", proximoSetorId, ")");
+        if (!proximaEtapaNome || !proximoSetorId) {
+            alert("Erro: Setor de destino inválido na tramitação.");
+            setSalvandoDespacho(false);
+            return;
+        }
 
-      const { data: dadosUp, error: erroUpProc } = await supabase
-          .from('processos')
-          .update({ 
-              setor_atual_id: proximoSetorId,
-              etapa_atual: proximaEtapaNome 
-          })
-          .eq('id', idProcessoReal)
-          .select();
+        console.log("🔍 Tramitando processo ID:", idProcessoReal, "para o setor:", proximaEtapaNome, "(ID:", proximoSetorId, ")");
 
-      if (erroUpProc) throw erroUpProc;
+        const { error: erroUpProc } = await supabase
+            .from('processos')
+            .update({ 
+                setor_atual_id: proximoSetorId,
+                etapa_atual: proximaEtapaNome 
+            })
+            .eq('id', idProcessoReal);
 
-      console.log("✅ Processo tramitado com sucesso no banco:", dadosUp);
+        if (erroUpProc) throw erroUpProc;
 
-      alert(`Despacho salvo e processo tramitado com sucesso para ${proximaEtapaNome}!`);
+        alert(`Despacho salvo e processo tramitado com sucesso para ${proximaEtapaNome}!`);
 
-          // Reseta o formulário
-          limparFormularioDespacho();
+        limparFormularioDespacho();
+        await carregarHistoricoDespachos(formData.id);
 
-          // RECARREGA OS DADOS NA TELA
-          await carregarHistoricoDespachos(formData.id);
+        // 3. ATUALIZA IMEDIATAMENTE A TELA PRINCIPAL E A LISTA DE PACIENTES
+        setFormData(prev => ({
+            ...prev,
+            setor_atual_id: proximoSetorId,
+            etapa_atual: proximaEtapaNome
+        }));
 
-          if (typeof carregarDadosPaciente === 'function') {
-              carregarDadosPaciente(formData.id);
-          }
+        if (typeof fetchPacientesIniciais === 'function') {
+            await fetchPacientesIniciais();
+        }
 
-          // ATUALIZA A FILA / FECHA O MODAL PARA REFLETir A MUDANÇA VISUALMENTE
-          if (typeof carregarFila === 'function') {
-              carregarFila();
-          } else if (typeof buscarProcessosFila === 'function') {
-              buscarProcessosFila();
-          } else {
-              // Se a função da fila tiver outro nome ou você quiser fechar a fila atual automaticamente:
-              setFilaAtiva(null); 
-          }
+        // Fecha o modal de despacho automaticamente após salvar
+        if (typeof setModalDespachoAberto === 'function') {
+            setModalDespachoAberto(false);
+        } else if (typeof setShowDespachoModal === 'function') {
+            setShowDespachoModal(false);
+        }
 
-      } catch (err) {
-          console.error('Erro ao salvar despacho:', err.message);
-          alert('Erro ao salvar o despacho: ' + err.message);
-      } finally {
-          setSalvandoDespacho(false);
-      }
-  };
+    } catch (err) {
+        console.error('Erro ao salvar despacho:', err.message);
+        alert('Erro ao salvar o despacho: ' + err.message);
+    } finally {
+        setSalvandoDespacho(false);
+    }
+};
 
   // Funções controladoras unificadas para todos os setores do TFD (incluindo PAR na posição correta)
   const handleAbrirAberturaProcesso = () => {
@@ -1595,71 +1703,145 @@ export default function PacientePage({
     await abrirFilaSetor('AQV', 'Arquivo');
   };    
 
-  // Função genérica de seleção do processo para qualquer fila até o Arquivo
   const selecionarProcessoFilaGeral = async (item) => {
     if (!item) {
       alert("Dados do processo não encontrados.");
       return;
     }
 
+    // 🛡️ TRAVA IMEDIATA CONTRA CONDIÇÕES DE CORRIDAS (Race Conditions)
+    cliqueFilaEmAndamentoRef.current = true; // 👈 ADICIONADO AQUI PARA CONGELAR INSTANTANEAMENTE
+    setPacienteSelecionadoDaFila(true);
+    if (typeof pacienteTravadoRef !== 'undefined') {
+      pacienteTravadoRef.current = true;
+    }
+    setFilaAtiva(null); // Fecha o modal instantaneamente
+
     const pacienteIdReal = item.paciente_id || item.pacientes?.id || item.id;
 
-    // BUSCA A FONTE DA VERDADE DIRETO DA TABELA PROCESSOS ANTES DE PREENCHER
-    let etapaReal = item.etapa_atual;
-    let setorRealId = item.setor_atual_id;
+    if (!pacienteIdReal) {
+      alert("ID do paciente não identificado neste processo.");
+      return;
+    }
 
     try {
-      if (pacienteIdReal) {
-        const { data: processoReal, error: erroProc } = await supabase
-          .from('processos')
-          .select('etapa_atual, setor_atual_id')
-          .eq('paciente_id', pacienteIdReal)
-          .maybeSingle();
+      // 1. Busca os dados oficiais diretamente da tabela 'pacientes'
+      const { data: pacienteData, error: erroPac } = await supabase
+        .from('pacientes')
+        .select('*')
+        .eq('id', pacienteIdReal)
+        .single();
 
-        if (!erroProc && processoReal) {
-          etapaReal = processoReal.etapa_atual || etapaReal;
-          setorRealId = processoReal.setor_atual_id || setorRealId;
-        }
+      if (erroPac) throw erroPac;
+
+      // 2. Busca os dados oficiais diretamente da tabela 'processos'
+      const { data: processoData, error: erroProc } = await supabase
+        .from('processos')
+        .select('id, etapa_atual, setor_atual_id')
+        .eq('paciente_id', pacienteIdReal)
+        .maybeSingle();
+
+      if (erroProc) throw erroProc;
+
+      // 3. Calcula idade e busca nome do hospital para preencher visualmente na hora
+      const idadeCalculada = calcularIdadeNumero(pacienteData.datanascpaciente);
+
+      let nomeHospEncontrado = '';
+      if (pacienteData.hospital_id && hospitais.length > 0) {
+        const hosp = hospitais.find(h => h.id === pacienteData.hospital_id);
+        if (hosp) nomeHospEncontrado = hosp.nome_hospital || '';
       }
+
+      // 4. Monta o objeto unificado com 100% de segurança
+      const pacienteConsolidado = {
+        ...pacienteData,
+        idadepaciente: idadeCalculada,
+        processo_id: processoData?.id || item.processo_id,
+        setor_atual_id: processoData?.setor_atual_id || item.setor_atual_id || 1,
+        etapa_atual: processoData?.etapa_atual || item.etapa_atual || 'Abertura de Processo'
+      };
+
+      // Atualiza os campos auxiliares e o formulário principal
+      if (nomeHospEncontrado) setTermoHospital(nomeHospEncontrado);
+      if (pacienteData.banco_paciente) setTermoBanco(pacienteData.banco_paciente);
+
+      setFormData(pacienteConsolidado);
+
+      // Sincroniza o array local de pacientes sem deixar o index resetar
+      const posicao = pacientes.findIndex(p => p.id === pacienteConsolidado.id);
+      if (posicao !== -1) {
+        setIndex(posicao);
+      } else {
+        setPacientes(prev => [pacienteConsolidado, ...(prev || [])]);
+        setIndex(0);
+      }
+
+      setIsEditing(true);
+      setErros({});
+
     } catch (err) {
-      console.error("Erro ao buscar dados reais do processo:", err);
+      console.error("Erro ao selecionar processo da fila:", err.message);
+      alert("Erro ao carregar os dados do paciente: " + err.message);
     }
-
-    const dadosPacientesAnexados = item.pacientes || {};
-
-    const paciente = {
-      ...item, 
-      ...dadosPacientesAnexados, 
-      id: pacienteIdReal,
-      nome_paciente: dadosPacientesAnexados.nome_paciente || item.nome_paciente,
-      cpf: dadosPacientesAnexados.cpf || item.cpf,
-      
-      // GARANTE A FONTE DA VERDADE: Utiliza os valores oficiais buscados na tabela processos
-      setor_atual_id: setorRealId || filaAtiva?.id || '',
-      etapa_atual: etapaReal || filaAtiva?.nome_setor || ''
-    };
-
-    setFormData(paciente);
-
-    if (paciente.etapa_atual?.trim().toUpperCase().includes('PAR')) {
-      carregarConsultaPAR(paciente.id || paciente.paciente_id);
-    }
-
-    const posicao = pacientes.findIndex(p => p.id === paciente.id);
-    if (posicao !== -1) {
-      setIndex(posicao);
-    } else {
-      setPacientes([paciente, ...pacientes]);
-      setIndex(0);
-    }
-
-    setIsEditing(true);
-    setErros({});
-    setFilaAtiva(null);
   };
 
+  
 
-    
+  // 🛡️ TRAVA DEFINITIVA DE FILA E REDIRECIONAMENTO DE FECHAMENTO
+  const estaEmModoFila = (
+    modoFilaAnalise || 
+    modoFilaMedica || 
+    modoFilaServicoSocial || 
+    modoFilaAgendamento || 
+    modoFilaParecerComissaoMedica || 
+    modoFilaRetorno || 
+    modoFilaAjudaCusto || 
+    modoFilaGerenciaTfd || 
+    modoFilaPassagem || 
+    modoFilaEstatistica || 
+    modoFilaPrestacaoContas || 
+    modoFilaArquivo
+  );
+
+  // (Nota: Certifique-se de que o estado 'pacienteSelecionadoDaFila' foi declarado lá no topo junto com os outros useState do componente!)
+
+  if (estaEmModoFila && !pacienteSelecionadoDaFila) {
+    return (
+      <ModaisFila
+        filaAtiva={
+          modoFilaAnalise ? 'Comissão de Análise' :
+          modoFilaMedica ? 'Comissão Médica' :
+          modoFilaServicoSocial ? 'Serviço Social' :
+          modoFilaAgendamento ? 'Agendamento' :
+          modoFilaParecerComissaoMedica ? 'Comissão Médica (PAR)' :
+          modoFilaRetorno ? 'Retorno' :
+          modoFilaAjudaCusto ? 'Ajuda de Custo' :
+          modoFilaGerenciaTfd ? 'Gerência TFD' :
+          modoFilaPassagem ? 'Passagem' :
+          modoFilaEstatistica ? 'Estatística' :
+          modoFilaPrestacaoContas ? 'Prestação de Contas' :
+          modoFilaArquivo ? 'Arquivo' : 'Fila de Trabalho'
+        }
+        // 👇 QUANDO CLICA EM FECHAR: Volta direto para a Home com apenas 1 clique!
+        setFilaAtiva={() => {
+          if (typeof setPaginaAtual === 'function') {
+            setPaginaAtual('home');
+          }
+        }}
+        processosFila={processosFila}
+        // 👇 USANDO A FUNÇÃO BLINDADA E COMPLETA DE SELEÇÃO!
+        selecionarProcessoFilaGeral={(item) => {
+          setPacienteSelecionadoDaFila(true); // Ativa a bandeira de segurança
+          setFilaAtiva(null);                // Fecha a fila instantaneamente
+          selecionarProcessoFilaGeral(item); // Chama a função completa que trata o paciente e a trava
+        }}
+        isSearchOpen={isSearchOpen}
+        setIsSearchOpen={setIsSearchOpen}
+      />
+    );
+  }
+
+        
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif', maxWidth: '1800px', margin: '0 auto', backgroundColor: '#f4f6f9' }}>
       
@@ -1710,8 +1892,53 @@ export default function PacientePage({
                         return;
                       }
 
-                      // Valida dinamicamente se é o setor da Comissão Médica pela sigla 'CM'
-                      if (siglaSetor === 'CM') {
+                      // Valida dinamicamente se é o setor da Comissão Médica pela sigla 'CM' (ou PAR / Setores 3 e 6)
+                      const setorAtualId = Number(formData?.setor_atual_id || 0);
+                      const etapaAtualStr = (formData?.etapa_atual || nomeSetor || '').toUpperCase();
+                      const ehEtapaMedica = 
+                        siglaSetor === 'CM' || 
+                        siglaSetor === 'PAR' || 
+                        setorAtualId === 3 || 
+                        setorAtualId === 6 || 
+                        etapaAtualStr.includes('COMISSÃO MÉDICA') || 
+                        etapaAtualStr.includes('COMISSAO MEDICA');
+
+                      if (ehEtapaMedica) {
+                        // 1. Varre TODAS as chaves existentes no localStorage e sessionStorage dinamicamente
+                        const valoresStorage = [];
+                        for (let i = 0; i < localStorage.length; i++) {
+                          valoresStorage.push(localStorage.getItem(localStorage.key(i)));
+                        }
+                        for (let i = 0; i < sessionStorage.length; i++) {
+                          valoresStorage.push(sessionStorage.getItem(sessionStorage.key(i)));
+                        }
+
+                        // 2. Captura também o texto do rodapé/tela onde aparece "Cargo: Médico(a)" ou "Administrador"
+                        const textoRodapeTela = document.body?.innerText || '';
+
+                        const tudoJunto = [
+                          JSON.stringify(usuarioPerfil || ''),
+                          ...valoresStorage,
+                          textoRodapeTela
+                        ]
+                          .join(' ')
+                          .toUpperCase()
+                          .normalize('NFD')
+                          .replace(/[\u0300-\u036f]/g, '');
+
+                        const temPermissaoMedica =
+                          tudoJunto.includes('CARGO: MEDICO') ||
+                          tudoJunto.includes('CARGO: ADMIN') ||
+                          tudoJunto.includes('"TIPO_USUARIO":"MEDICO') ||
+                          tudoJunto.includes('"TIPO_USUARIO":"ADMIN') ||
+                          tudoJunto.includes('ADMINISTRADOR') ||
+                          tudoJunto.includes('MEDICO(A)');
+
+                        if (!temPermissaoMedica) {
+                          alert("⛔ Acesso Restrito: Apenas usuários com perfil de Médico(a) ou Administrador podem acessar e gerenciar a Comissão Médica.");
+                          return;
+                        }
+
                         if (typeof setPacienteIdSelecionado === 'function') {
                           setPacienteIdSelecionado(idParaEnviar);
                         }
@@ -1719,11 +1946,9 @@ export default function PacientePage({
                           setPacienteIdProps(idParaEnviar);
                         }
                         if (typeof setPaginaAtual === 'function') {
-                          setPaginaAtual('parecerMedico'); 
+                          setPaginaAtual('parecerMedico');
                         }
                       } 
-
-                      // Valida dinamicamente se é o setor de Serviço Social pela sigla 'SS'
                       // Valida dinamicamente se é o setor de Serviço Social pela sigla 'SS'
                       else if (siglaSetor === 'SS' || siglaSetor === 'SERVICO_SOCIAL') {
                         // Blindagem: Salva imediatamente na sessão para resgate instantâneo
@@ -1822,12 +2047,23 @@ export default function PacientePage({
             </div>
           </div>
         )}
+
+        {/* CHECKLIST DE ATIVIDADES OBRIGATÓRIAS DO RETORNO (SETOR 7) */}
+        {modoFilaRetorno && formData?.id && (
+          <div style={{ marginBottom: '15px' }}>
+            <ChecklistSetor 
+              processoId={formData.id} 
+              setorAtualId={7} 
+            />
+          </div>
+        )}
               
       
         <>
-          {/* LINHA 1: Nome (largo), CPF, Telefone, Nº Processo */}
+          {/* LINHA 1: Nome (largo), CPF, Telefone, Nº Processo, Data Entrada, Data Deferimento */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '1px', width: '100%' }}>
-            <label style={{ flex: 4.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+            {/* Nome */}
+            <label style={{ flex: 3.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
               Nome: 
               <input 
                 ref={nomeInputRef}
@@ -1850,7 +2086,7 @@ export default function PacientePage({
                 style={{ 
                   backgroundColor: '#fff3cd',      
                   color: '#664d03',                
-                  fontWeight: 'bold',               
+                  fontWeight: 'bold',              
                   borderColor: erros.nome_paciente ? 'red' : '#ffeeba',
                   textAlign: 'left', 
                   width: '100%',
@@ -1865,7 +2101,8 @@ export default function PacientePage({
               )}
             </label>
 
-            <label style={{ flex: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+            {/* CPF */}
+            <label style={{ flex: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
               CPF: 
               <input 
                 ref={cpfInputRef}
@@ -1887,7 +2124,8 @@ export default function PacientePage({
               )}
             </label>
             
-            <label style={{ flex: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+            {/* Telefone */}
+            <label style={{ flex: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
               Telefone: 
               <input 
                 name="telefone" 
@@ -1899,7 +2137,8 @@ export default function PacientePage({
               />
             </label>
 
-            <label style={{ flex: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+            {/* Nº do Processo */}
+            <label style={{ flex: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
               Nº do Processo: 
               <input 
                 name="numeroprocesso" 
@@ -1908,6 +2147,32 @@ export default function PacientePage({
                 onChange={handleNumeroProcessoChange} 
                 placeholder="999999/9999-99" 
                 maxLength={15}
+                style={{ textAlign: 'left', width: '100%', boxSizing: 'border-box', padding: '4px' }}
+              />
+            </label>
+
+            {/* Data Entrada (Protocolo) */}
+            <label style={{ flex: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+              Data Entrada: 
+              <input 
+                type="date"
+                name="data_entrada" 
+                value={formData.data_entrada || ''} 
+                disabled={!isEditing} 
+                onChange={(e) => setFormData(prev => ({ ...prev, data_entrada: e.target.value }))} 
+                style={{ textAlign: 'left', width: '100%', boxSizing: 'border-box', padding: '4px' }}
+              />
+            </label>
+
+            {/* Data Deferimento (Comissão) */}
+            <label style={{ flex: 1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
+              Data Deferimento: 
+              <input 
+                type="date"
+                name="data_deferimento" 
+                value={formData.data_deferimento || ''} 
+                disabled={!isEditing} 
+                onChange={(e) => setFormData(prev => ({ ...prev, data_deferimento: e.target.value }))} 
                 style={{ textAlign: 'left', width: '100%', boxSizing: 'border-box', padding: '4px' }}
               />
             </label>

@@ -383,6 +383,28 @@ export default function ConsultasPage({ setPaginaAtual, usuarioLogado }) {
     }
   }
 
+  async function handleDataConsultaChange(novaData) {
+    setFormData(prev => ({ ...prev, data_consulta: novaData }));
+
+    if (!novaData || !formData.paciente_id) return;
+
+    let query = supabase
+      .from('consultas')
+      .select('id, especialidade, status_agendamento')
+      .eq('paciente_id', parseInt(formData.paciente_id))
+      .eq('data_consulta', novaData);
+
+    if (isEditing && formData.id) {
+      query = query.neq('id', formData.id);
+    }
+
+    const { data } = await query;
+    if (data && data.length > 0) {
+      const dataBR = novaData.split('-').reverse().join('/');
+      alert(`⚠️ Atenção: Este paciente já possui consulta agendada para ${dataBR} (${data[0].especialidade}).`);
+    }
+  }
+
   function irParaPrimeiro() {
     if (consultas.length > 0) preencherFormularioComIndice(consultas, 0);
   }
@@ -447,10 +469,45 @@ export default function ConsultasPage({ setPaginaAtual, usuarioLogado }) {
     }
 
     try {
+      const pacienteIdInt = parseInt(formData.paciente_id);
+      const dataConsultaStr = formData.data_consulta.slice(0, 10);
+
+      // 1. VERIFICAÇÃO DE DUPLICIDADE NO BANCO (Mesmo paciente + Mesma data)
+      let queryDuplicidade = supabase
+        .from('consultas')
+        .select('id, especialidade, status_agendamento, hospitais(nome_hospital)')
+        .eq('paciente_id', pacienteIdInt)
+        .eq('data_consulta', dataConsultaStr);
+
+      // Se estiver editando uma consulta existente, ignora o próprio registro
+      if (isEditing && formData.id) {
+        queryDuplicidade = queryDuplicidade.neq('id', formData.id);
+      }
+
+      const { data: duplicadas, error: erroBusca } = await queryDuplicidade;
+      if (erroBusca) throw erroBusca;
+
+      if (duplicadas && duplicadas.length > 0) {
+        const reg = duplicadas[0];
+        const dataFormatada = dataConsultaStr.split('-').reverse().join('/');
+        const nomeHosp = reg.hospitais?.nome_hospital || 'Hospital não informado';
+
+        alert(
+          `⚠️ AGENDAMENTO DUPLICADO BLOQUEADO!\n\n` +
+          `O paciente ${formData.paciente_nome} já possui uma consulta cadastrada para o dia ${dataFormatada}.\n\n` +
+          `• Especialidade: ${reg.especialidade || 'Não informada'}\n` +
+          `• Hospital: ${nomeHosp}\n` +
+          `• Status: ${reg.status_agendamento || 'AGUARDANDO'}\n\n` +
+          `Não é permitido cadastrar duas consultas para o mesmo paciente na mesma data.`
+        );
+        return; // Interrompe o salvamento
+      }
+
+      // 2. PREPARA OS DADOS PARA SALVAR
       const dadosParaSalvar = {
-        paciente_id: parseInt(formData.paciente_id),
+        paciente_id: pacienteIdInt,
         hospital_id: parseInt(formData.hospital_id),
-        data_consulta: formData.data_consulta,
+        data_consulta: dataConsultaStr,
         especialidade: formData.especialidade,
         status_agendamento: formData.status_agendamento,
         tipoconsulta: formData.tipoconsulta,
@@ -479,7 +536,12 @@ export default function ConsultasPage({ setPaginaAtual, usuarioLogado }) {
       carregarDados();
     } catch (error) {
       console.error('Erro ao salvar:', error.message);
-      alert('Erro ao salvar: ' + error.message);
+      // Tratamento amigável caso a trava do banco de dados (Unique Constraint) dispare
+      if (error.code === '23505') {
+        alert('⚠️ Já existe uma consulta cadastrada para este paciente nesta mesma data.');
+      } else {
+        alert('Erro ao salvar: ' + error.message);
+      }
     }
   }
 
@@ -647,7 +709,7 @@ export default function ConsultasPage({ setPaginaAtual, usuarioLogado }) {
             <input
               type="date"
               value={formData.data_consulta}
-              onChange={(e) => setFormData({ ...formData, data_consulta: e.target.value })}
+              onChange={(e) => handleDataConsultaChange(e.target.value)}
               disabled={camposBloqueados}
               style={{ width: '100%', padding: '8px', marginTop: '5px' }}
             />

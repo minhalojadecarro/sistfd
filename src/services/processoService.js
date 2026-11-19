@@ -32,7 +32,7 @@ export async function enriquecerDadosProcesso(processosData) {
       let paciente = null;
       let consultaInfo = null;
 
-      // Busca os dados do paciente (removida a dependência de etapa_atual do paciente)
+      // Busca os dados do paciente
       if (proc.paciente_id) {
         const { data: pacData } = await supabase
           .from('pacientes')
@@ -69,7 +69,6 @@ export async function enriquecerDadosProcesso(processosData) {
     })
   );
 
-  // Retorna os dados limpos baseados unicamente no fato de o processo pertencer ao setor buscado
   return dadosEnriquecidos;
 }
 
@@ -87,6 +86,7 @@ export async function tramitarProcessoService({
   pacienteId
 }) {
   // 1. Atualiza o setor atual e a etapa na tabela de processos (A fonte da verdade)
+  // Nota: A Trigger de Workflow no banco vai validar automaticamente as permissões e o checklist obrigatório.
   const { data: dadosUp, error: erroUp } = await supabase
     .from('processos')
     .update({
@@ -99,7 +99,7 @@ export async function tramitarProcessoService({
 
   if (erroUp) throw erroUp;
 
-  // 1.1 Se o campo etapa_atual ainda existir na tabela pacientes e você quiser mantê-lo sincronizado sem travar:
+  // 1.1 Sincroniza a etapa no cadastro do paciente (se aplicável)
   if (pacienteId || dadosUp?.paciente_id) {
     const idAlvoPaciente = pacienteId || dadosUp.paciente_id;
     try {
@@ -108,7 +108,6 @@ export async function tramitarProcessoService({
         .update({ etapa_atual: nomeProximaEtapa })
         .eq('id', idAlvoPaciente);
     } catch (e) {
-      // Caso a coluna já tenha sido removida do banco, o try/catch impede que o sistema quebre ao salvar
       console.warn("Aviso: Coluna etapa_atual não existe mais na tabela pacientes ou falhou ao atualizar.");
     }
   }
@@ -131,4 +130,65 @@ export async function tramitarProcessoService({
   }
 
   return dadosUp;
+}
+
+/**
+ * ==========================================
+ * NOVAS FUNÇÕES DO MOTOR DE WORKFLOW / CHECKLIST
+ * ==========================================
+ */
+
+/**
+ * Busca as atividades configuradas e o status de execução de um processo em um determinado setor.
+ */
+export async function buscarChecklistProcesso(processoId, setorId) {
+  // 1. Busca as atividades obrigatórias/configuradas para o setor
+  const { data: atividades, error: errAtiv } = await supabase
+    .from('fluxo_atividades_setor')
+    .select('*')
+    .eq('setor_id', setorId)
+    .eq('ativo', true)
+    .order('ordem', { ascending: true });
+
+  if (errAtiv) throw errAtiv;
+
+  // 2. Busca o progresso de execução desse processo específico
+  const { data: execucoes, error: errExec } = await supabase
+    .from('processo_checklist_execucao')
+    .select('*')
+    .eq('processo_id', processoId);
+
+  if (errExec) throw errExec;
+
+  return {
+    atividades: atividades || [],
+    execucoes: execucoes || []
+  };
+}
+
+/**
+ * Marca ou desmarca uma atividade do checklist interno do setor.
+ */
+export async function alternarAtividadeChecklistService({
+  processoId,
+  atividadeId,
+  concluido,
+  usuarioId,
+  cicloEtapa = 1
+}) {
+  const { data, error } = await supabase
+    .from('processo_checklist_execucao')
+    .upsert({
+      processo_id: processoId,
+      atividade_id: atividadeId,
+      ciclo_etapa: cicloEtapa,
+      concluido: concluido,
+      concluido_por: concluido ? usuarioId : null,
+      concluido_em: concluido ? new Date().toISOString() : null
+    }, { onConflict: 'processo_id,atividade_id,ciclo_etapa' })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
 }

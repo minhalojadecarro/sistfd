@@ -9,7 +9,8 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
   const [statusSelecionado, setStatusSelecionado] = useState('TODOS');
 
   const [totalFiltrado, setTotalFiltrado] = useState(0);
-  const [sexoCounts, setSexoCounts] = useState({});
+  const [sexoCounts, setSexoCounts] = useState([]);
+  const [faixaEtariaCounts, setFaixaEtariaCounts] = useState([]);
   const [especialidadeCounts, setEspecialidadeCounts] = useState([]);
 
   useEffect(() => {
@@ -25,7 +26,6 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
   async function carregarDadosIniciais() {
     setLoading(true);
     try {
-      // BUSCANDO TODOS OS PACIENTES EM LOTES PARA EVITAR O LIMITE DE 1000 REGISTROS DO SUPABASE
       let todosPacientes = [];
       let rangeSize = 1000;
       let from = 0;
@@ -34,7 +34,7 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
       while (hasMore) {
         const { data: pacData, error: pacError } = await supabase
           .from('pacientes')
-          .select('id, nome_paciente, statuspaciente, sexopaciente, especialidade_id')
+          .select('id, nome_paciente, statuspaciente, sexopaciente, datanascpaciente, especialidade_id')
           .range(from, from + rangeSize - 1);
 
         if (pacError) throw pacError;
@@ -75,6 +75,35 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
     }
   }
 
+  function calcularIdade(dataNascStr) {
+    if (!dataNascStr) return null;
+    const partes = String(dataNascStr).split('T')[0].split('-');
+    if (partes.length !== 3) return null;
+
+    const anoNasc = parseInt(partes[0], 10);
+    const mesNasc = parseInt(partes[1], 10) - 1;
+    const diaNasc = parseInt(partes[2], 10);
+
+    if (isNaN(anoNasc) || isNaN(mesNasc) || isNaN(diaNasc)) return null;
+
+    const hoje = new Date();
+    let idade = hoje.getFullYear() - anoNasc;
+    const m = hoje.getMonth() - mesNasc;
+    if (m < 0 || (m === 0 && hoje.getDate() < diaNasc)) {
+      idade--;
+    }
+    return idade >= 0 && idade <= 130 ? idade : null;
+  }
+
+  function obterFaixaEtaria(idade) {
+    if (idade === null) return 'Não Informada';
+    if (idade <= 15) return '0 a 15 anos';
+    if (idade <= 24) return '16 a 24 anos';
+    if (idade <= 44) return '25 a 44 anos';
+    if (idade <= 59) return '45 a 59 anos';
+    return 'Acima de 60 anos';
+  }
+
   function processarFiltros(statusFiltro, pacientes, espMap) {
     const pacientesFiltrados = pacientes.filter(p => {
       const rawStatus = p.statuspaciente || 'AGUARDANDO AGENDAMENTO';
@@ -82,22 +111,40 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
       const statusDesejado = statusFiltro.replace(/\s+/g, ' ').trim().toUpperCase();
 
       if (statusDesejado === 'TODOS') return true;
-      
       return statusPaciente === statusDesejado;
     });
 
-    setTotalFiltrado(pacientesFiltrados.length);
+    const total = pacientesFiltrados.length;
+    setTotalFiltrado(total);
 
     const sCounts = {};
     const eCounts = {};
+    const fCounts = {
+      '0 a 15 anos': 0,
+      '16 a 24 anos': 0,
+      '25 a 44 anos': 0,
+      '45 a 59 anos': 0,
+      'Acima de 60 anos': 0,
+      'Não Informada': 0
+    };
 
     pacientesFiltrados.forEach(p => {
-      let sexo = (p.sexopaciente || 'NÃO INFORMADO').replace(/\s+/g, ' ').trim().toUpperCase();
+      // 1. Contagem por Sexo (alinhada com as 5 opções do Cadastro de Pacientes)
+      let sexo = (p.sexopaciente || 'NÃO ESPECIFICADO').replace(/\s+/g, ' ').trim().toUpperCase();
       if (sexo === 'M' || sexo === 'MASCULINO') sexo = 'MASCULINO';
       else if (sexo === 'F' || sexo === 'FEMININO') sexo = 'FEMININO';
-      
+      else if (sexo === 'NAO BINARIO' || sexo === 'NÃO BINÁRIO') sexo = 'NÃO BINÁRIO';
+      else if (sexo === 'NAO ESPECIFICADO' || sexo === 'NÃO ESPECIFICADO' || sexo === 'NÃO INFORMADO' || sexo === '') sexo = 'NÃO ESPECIFICADO';
+      else if (sexo === 'INDEFINIDO') sexo = 'INDEFINIDO';
+
       sCounts[sexo] = (sCounts[sexo] || 0) + 1;
 
+      // 2. Contagem por Faixa Etária
+      const idade = calcularIdade(p.datanascpaciente);
+      const faixa = obterFaixaEtaria(idade);
+      fCounts[faixa] = (fCounts[faixa] || 0) + 1;
+
+      // 3. Contagem por Especialidade
       let nomeEsp = 'NÃO INFORMADA';
       if (p.especialidade_id && espMap[p.especialidade_id]) {
         nomeEsp = espMap[p.especialidade_id].toUpperCase();
@@ -105,13 +152,156 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
       eCounts[nomeEsp] = (eCounts[nomeEsp] || 0) + 1;
     });
 
-    setSexoCounts(sCounts);
+    const coresSexo = {
+      'MASCULINO': '#f59e0b',        // Laranja/Âmbar
+      'FEMININO': '#0d6efd',         // Azul
+      'NÃO BINÁRIO': '#8b5cf6',      // Roxo
+      'NÃO ESPECIFICADO': '#94a3b8', // Cinza Ardósia
+      'INDEFINIDO': '#14b8a6'        // Verde-água
+    };
+
+    const sexoArray = Object.entries(sCounts)
+      .map(([nome, qtd]) => ({
+        nome,
+        qtd,
+        percentual: total > 0 ? ((qtd / total) * 100).toFixed(1) : 0,
+        cor: coresSexo[nome] || '#64748b'
+      }))
+      .sort((a, b) => b.qtd - a.qtd);
+
+    setSexoCounts(sexoArray);
+
+    const ordemFaixas = [
+      '0 a 15 anos',
+      '16 a 24 anos',
+      '25 a 44 anos',
+      '45 a 59 anos',
+      'Acima de 60 anos',
+      'Não Informada'
+    ];
+
+    const faixasArray = ordemFaixas
+      .filter(faixa => faixa !== 'Não Informada' || fCounts[faixa] > 0)
+      .map(faixa => ({
+        faixa,
+        qtd: fCounts[faixa],
+        percentual: total > 0 ? ((fCounts[faixa] / total) * 100).toFixed(1) : 0
+      }));
+
+    setFaixaEtariaCounts(faixasArray);
 
     const sortedEspecialidades = Object.entries(eCounts)
       .map(([nome, qtd]) => ({ nome, qtd }))
       .sort((a, b) => b.qtd - a.qtd);
 
     setEspecialidadeCounts(sortedEspecialidades);
+  }
+
+  function renderGraficoPizza() {
+    if (totalFiltrado === 0 || sexoCounts.length === 0) {
+      return (
+        <p style={{ color: '#666', fontStyle: 'italic', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>
+          Sem dados para exibir no gráfico.
+        </p>
+      );
+    }
+
+    const tamanho = 190;
+    const centro = tamanho / 2;
+    const raio = 82;
+    let anguloAcumulado = -90;
+
+    const fatias = sexoCounts.map((item) => {
+      const fracao = item.qtd / totalFiltrado;
+      const anguloFatia = fracao * 360;
+
+      if (fracao >= 0.9999) {
+        return (
+          <circle
+            key={item.nome}
+            cx={centro}
+            cy={centro}
+            r={raio}
+            fill={item.cor}
+          >
+            <title>{`${item.nome}: ${item.qtd} (${item.percentual}%)`}</title>
+          </circle>
+        );
+      }
+
+      const anguloInicioRad = (anguloAcumulado * Math.PI) / 180;
+      const anguloFimRad = ((anguloAcumulado + anguloFatia) * Math.PI) / 180;
+
+      const x1 = centro + raio * Math.cos(anguloInicioRad);
+      const y1 = centro + raio * Math.sin(anguloInicioRad);
+      const x2 = centro + raio * Math.cos(anguloFimRad);
+      const y2 = centro + raio * Math.sin(anguloFimRad);
+
+      const largeArcFlag = anguloFatia > 180 ? 1 : 0;
+      const d = `M ${centro} ${centro} L ${x1} ${y1} A ${raio} ${raio} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
+
+      const anguloMeioRad = ((anguloAcumulado + anguloFatia / 2) * Math.PI) / 180;
+      const textoX = centro + (raio * 0.6) * Math.cos(anguloMeioRad);
+      const textoY = centro + (raio * 0.6) * Math.sin(anguloMeioRad);
+
+      anguloAcumulado += anguloFatia;
+
+      return (
+        <g key={item.nome} style={{ transition: 'opacity 0.2s' }}>
+          <path d={d} fill={item.cor} stroke="#ffffff" strokeWidth="2">
+            <title>{`${item.nome}: ${item.qtd} pacientes (${item.percentual}%)`}</title>
+          </path>
+          {fracao >= 0.06 && (
+            <text
+              x={textoX}
+              y={textoY}
+              fill="#ffffff"
+              fontSize="11"
+              fontWeight="bold"
+              textAnchor="middle"
+              dominantBaseline="middle"
+              style={{ pointerEvents: 'none', textShadow: '0 1px 2px rgba(0,0,0,0.45)' }}
+            >
+              {item.qtd}
+            </text>
+          )}
+        </g>
+      );
+    });
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flexWrap: 'wrap', gap: '15px', padding: '8px 0' }}>
+        <svg width={tamanho} height={tamanho} viewBox={`0 0 ${tamanho} ${tamanho}`} style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.08))' }}>
+          {fatias}
+        </svg>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '1', minWidth: '175px' }}>
+          {sexoCounts.map(item => (
+            <div
+              key={item.nome}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                background: '#f8f9fa',
+                borderRadius: '6px',
+                borderLeft: `4px solid ${item.cor}`
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: item.cor, display: 'inline-block' }}></span>
+                <span style={{ fontSize: '12px', fontWeight: '600', color: '#334155' }}>{item.nome}</span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>{item.qtd}</span>
+                <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '5px' }}>({item.percentual}%)</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -133,95 +323,122 @@ export default function DashboardStatusPage({ setPaginaAtual }) {
       {loading ? (
         <p>Carregando painel dinâmico...</p>
       ) : (
-        <div>
-          {/* BARRA DE SELEÇÃO DE STATUS */}
-          <div className="card" style={{ padding: '12px 20px', background: '#f8f9fa', marginBottom: '15px', borderLeft: '6px solid #ffc107', maxWidth: '450px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-            <label style={{ display: 'block', fontWeight: 'bold', color: '#495057', marginBottom: '4px', textTransform: 'uppercase', fontSize: '11px' }}>
-              Selecione aqui o Status:
-            </label>
-            <select 
-              value={statusSelecionado} 
-              onChange={(e) => setStatusSelecionado(e.target.value)}
-              style={{ width: '100%', padding: '8px', fontSize: '14px', borderRadius: '4px', border: '1px solid #ced4da', background: '#fff', fontWeight: 'bold', color: '#0d6efd' }}
-            >
-              <option value="TODOS">TODOS</option>
-              <option value="AGUARDANDO AGENDAMENTO">AGUARDANDO AGENDAMENTO</option>
-              <option value="ATIVO">ATIVO</option>
-              <option value="PERMANÊNCIA">PERMANÊNCIA</option>
-              <option value="INATIVO">INATIVO</option>
-            </select>
-          </div>
-
-          {/* LAYOUT EM DUAS COLUNAS ALINHADAS NO TOPO */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'flex-start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.15fr', gap: '20px', alignItems: 'stretch' }}>
+          
+          {/* COLUNA ESQUERDA: Filtro + Faixa Etária + Gráfico de Pizza */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             
-            {/* COLUNA ESQUERDA: Sexo e Total */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div className="card" style={{ padding: '15px 20px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', margin: 0 }}>
-                <h3 style={{ fontSize: '15px', color: '#333', marginBottom: '12px', borderBottom: '2px solid #f1f1f1', paddingBottom: '6px' }}>
-                  Distribuição por Sexo ({statusSelecionado})
-                </h3>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {Object.keys(sexoCounts).length > 0 ? (
-                    Object.entries(sexoCounts).map(([sexo, qtd]) => (
-                      <div key={sexo} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#f8f9fa', borderRadius: '4px', borderLeft: '4px solid #17a2b8' }}>
-                        <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '14px' }}>{sexo}</span>
-                        <span style={{ fontWeight: 'bold', color: '#007bff', fontSize: '15px' }}>{qtd}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p style={{ color: '#666', fontStyle: 'italic', fontSize: '14px' }}>Nenhum registro encontrado para este status.</p>
-                  )}
-                </div>
-              </div>
+            {/* 1. SELEÇÃO DE STATUS */}
+            <div className="card" style={{ padding: '14px 18px', background: '#f8f9fa', borderLeft: '6px solid #ffc107', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', margin: 0 }}>
+              <label style={{ display: 'block', fontWeight: 'bold', color: '#495057', marginBottom: '6px', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px' }}>
+                Selecione aqui o Status:
+              </label>
+              <select
+                value={statusSelecionado}
+                onChange={(e) => setStatusSelecionado(e.target.value)}
+                style={{ width: '100%', padding: '9px 12px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ced4da', background: '#fff', fontWeight: 'bold', color: '#0d6efd', cursor: 'pointer' }}
+              >
+                <option value="TODOS">TODOS</option>
+                <option value="AGUARDANDO AGENDAMENTO">AGUARDANDO AGENDAMENTO</option>
+                <option value="ATIVO">ATIVO</option>
+                <option value="PERMANÊNCIA">PERMANÊNCIA</option>
+                <option value="INATIVO">INATIVO</option>
+              </select>
+            </div>
 
-              {/* CARD DE TOTAL */}
-              <div className="card" style={{ padding: '20px', textAlign: 'center', background: '#ffc107', color: '#000', borderRadius: '6px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)', margin: 0 }}>
-                <h4 style={{ fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px', fontWeight: 'bold' }}>
-                  Total de Pacientes Filtrados
-                </h4>
-                <p style={{ fontSize: '36px', fontWeight: 'bold', margin: 0 }}>
-                  {totalFiltrado}
-                </p>
+            {/* 2. TABELA DE FAIXA ETÁRIA */}
+            <div className="card" style={{ padding: '15px 18px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', margin: 0 }}>
+              <h3 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#334155', marginBottom: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '6px', fontWeight: 'bold' }}>
+                Distribuição por Faixa Etária ({statusSelecionado})
+              </h3>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: '6px', overflow: 'hidden' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#1e293b', color: '#fff' }}>
+                      <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: '600' }}>Faixa Etária</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: '600', width: '110px' }}>Qtd Pacientes</th>
+                      <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: '600', width: '75px' }}>%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {faixaEtariaCounts.map((item, idx) => (
+                      <tr key={item.faixa} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '7px 12px', fontWeight: '600', color: '#334155' }}>
+                          {item.faixa}
+                        </td>
+                        <td style={{ padding: '7px 12px', textAlign: 'center', fontWeight: 'bold', color: '#0d6efd', background: '#eff6ff' }}>
+                          {item.qtd}
+                        </td>
+                        <td style={{ padding: '7px 12px', textAlign: 'right', color: '#64748b', fontSize: '11px' }}>
+                          {item.percentual}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* COLUNA DIREITA: Tabela de Especialidades */}
-            <div>
-              <div className="card" style={{ padding: '18px 18px', textAlign: 'center', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', margin: 0 }}>
-                <h3 style={{ fontSize: '10px', color: '#333', marginBottom: '10px', borderBottom: '2px solid #f1f1f1', paddingBottom: '3px' }}>
-                  Especialidades ({statusSelecionado})
-                </h3>
-
-                <div style={{ maxHeight: '560px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '4px' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '11px' }}>
-                    <thead>
-                      <tr style={{ background: '#f1f3f5', position: 'sticky', top: 0, zIndex: 1 }}>
-                        <th style={{ padding: '8px 10px', borderBottom: '2px solid #dee2e6', color: '#495057' }}>Especialidade</th>
-                        <th style={{ padding: '8px 10px', borderBottom: '2px solid #dee2e6', color: '#495057', textAlign: 'center' }}>Qtd Pacientes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {especialidadeCounts.length > 0 ? (
-                        especialidadeCounts.map((item, index) => (
-                          <tr key={item.nome} style={{ background: index % 2 === 0 ? '#fff' : '#f8f9fa' }}>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #dee2e6', color: '#212529' }}>{item.nome}</td>
-                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #dee2e6', color: '#0d6efd', fontWeight: 'bold', textAlign: 'center', background: '#e7f5ff' }}>{item.qtd}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="2" style={{ padding: '12px', textAlign: 'center', color: '#666' }}>Nenhuma especialidade encontrada.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+            {/* 3. GRÁFICO DE PIZZA - DISTRIBUIÇÃO POR SEXO */}
+            <div className="card" style={{ padding: '15px 18px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', margin: 0, flex: 1 }}>
+              <h3 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#334155', marginBottom: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '6px', fontWeight: 'bold' }}>
+                Distribuição por Sexo ({statusSelecionado})
+              </h3>
+              {renderGraficoPizza()}
             </div>
 
           </div>
+
+          {/* COLUNA DIREITA: Tabela de Especialidades + Total de Pacientes no Rodapé */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div className="card" style={{ padding: '15px 18px', background: '#fff', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', margin: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#334155', marginBottom: '10px', borderBottom: '2px solid #f1f5f9', paddingBottom: '6px', fontWeight: 'bold' }}>
+                Especialidades ({statusSelecionado})
+              </h3>
+
+              <div style={{ maxHeight: '490px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '6px', flex: 1 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#1e293b', color: '#fff', position: 'sticky', top: 0, zIndex: 1 }}>
+                      <th style={{ padding: '9px 12px' }}>Especialidade</th>
+                      <th style={{ padding: '9px 12px', textAlign: 'center', width: '115px' }}>Qtd Pacientes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {especialidadeCounts.length > 0 ? (
+                      especialidadeCounts.map((item, index) => (
+                        <tr key={item.nome} style={{ background: index % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                          <td style={{ padding: '7px 12px', borderBottom: '1px solid #e2e8f0', color: '#1e293b', fontWeight: '500' }}>{item.nome}</td>
+                          <td style={{ padding: '7px 12px', borderBottom: '1px solid #e2e8f0', color: '#0d6efd', fontWeight: 'bold', textAlign: 'center', background: '#eff6ff' }}>{item.qtd}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="2" style={{ padding: '15px', textAlign: 'center', color: '#666' }}>Nenhuma especialidade encontrada.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* CARD DE TOTAL GERAL NO RODAPÉ DA DIREITA */}
+            <div className="card" style={{ padding: '16px 24px', background: '#ffc107', color: '#0f172a', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.08)', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h4 style={{ fontSize: '14px', textTransform: 'uppercase', letterSpacing: '0.8px', margin: 0, fontWeight: '800' }}>
+                  Total de Pacientes
+                </h4>
+                <span style={{ fontSize: '11px', fontWeight: '600', opacity: 0.8 }}>
+                  Filtro atual: {statusSelecionado}
+                </span>
+              </div>
+              <p style={{ fontSize: '34px', fontWeight: '900', margin: 0, lineHeight: 1 }}>
+                {totalFiltrado.toLocaleString('pt-BR')}
+              </p>
+            </div>
+          </div>
+
         </div>
       )}
     </div>

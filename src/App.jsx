@@ -32,11 +32,18 @@ import DashboardEspecialidadePage from './pages/DashboardEspecialidadePage';
 import PermissoesPage from './components/PermissoesPage';
 import PassagensPage from './pages/PassagensPage';
 import { temPermissao } from './utils/permissoes';
-
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import RetornoProcessoPage from './pages/RetornoProcessoPage';
 
 import './App.css';
 
 export default function App() {
+  // Verifica se o usuário está acessando a URL de redefinição de senha (/reset-password)
+  const isResetPasswordRoute = window.location.pathname === '/reset-password';
+
+  if (isResetPasswordRoute) {
+    return <ResetPasswordPage onSenhaAtualizada={() => { window.location.href = '/'; }} />;
+  }
   const [sessao, setSessao] = useState(null);
   const [usuarioPerfil, setUsuarioPerfil] = useState(null);
   const [loadingApp, setLoadingApp] = useState(true);
@@ -49,6 +56,8 @@ export default function App() {
   const [menuProcessoRetornoAberto, setMenuProcessoRetornoAberto] = useState(false); // <--- Adicione esta linha se não tiver
   const [menuDashboardAberto, setMenuDashboardAberto] = useState(false);
   const [menuRelatoriosAberto, setMenuRelatoriosAberto] = useState(false);
+
+
 
   // Estados para o Modal de Pesquisa rápida de Paciente no Menu
   const [modalPesquisaPacienteAberto, setModalPesquisaPacienteAberto] = useState(false);
@@ -507,10 +516,7 @@ export default function App() {
                     setPacienteIdSelecionado(null);
                     setMenuProcessoAberto(false);
                     setMenuProcessoRetornoAberto(false);
-                    setPaginaAtual(null);
-                    setTimeout(() => {
-                      setPaginaAtual(rotaDestino);
-                    }, 10);
+                    setPaginaAtual(rotaDestino);
                   };
 
                   return (
@@ -575,38 +581,75 @@ export default function App() {
                     setPacienteIdSelecionado(null);
                     setMenuProcessoAberto(false);
                     setMenuProcessoRetornoAberto(false);
-                    setPaginaAtual(null);
-                    setTimeout(() => {
-                      setPaginaAtual(rotaDestino);
-                    }, 10);
+                    setPaginaAtual(rotaDestino);
                   };
 
                   return (
                     <>
                       {temPermissao(usuarioPerfil, 'processo-parecer-comissao-medica') && (
-                        <div onClick={() => irParaFilaRetorno('processo-parecer-comissao-medica')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                        <div 
+                          onClick={() => irParaFilaRetorno('processo-parecer-comissao-medica')} 
+                          style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                          onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                          onMouseLeave={(e) => e.target.style.background = '#fff'}
+                        >
                           Comissão Médica (PAR) <div style={{ fontSize: '11px', color: '#666' }}>Análise e parecer médico de agendamento</div>
                         </div>
                       )}
-                      <div onClick={() => irParaFilaRetorno('processos-retorno')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-retorno')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Retôrno (RET) <div style={{ fontSize: '11px', color: '#666' }}>Controle de retorno do paciente</div>
                       </div>
-                      <div onClick={() => irParaFilaRetorno('processos-ajuda-custo')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-ajuda-custo')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Ajuda de Custo (AJC) <div style={{ fontSize: '11px', color: '#666' }}>Lista, valores e banco</div>
                       </div>
-                      <div onClick={() => irParaFilaRetorno('processos-gerencia-tfd')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-gerencia-tfd')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Gerência TFD (TFD) <div style={{ fontSize: '11px', color: '#666' }}>Despacho e autorização</div>
                       </div>
-                      <div onClick={() => irParaFilaRetorno('processos-passagem')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-passagem')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Passagem (PAS) <div style={{ fontSize: '11px', color: '#666' }}>Trechos e prazos de passagens</div>
                       </div>
-                      <div onClick={() => irParaFilaRetorno('processos-estatistica')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-estatistica')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Estatística (EST) <div style={{ fontSize: '11px', color: '#666' }}>Lançamento BPA DataSUS</div>
                       </div>
-                      <div onClick={() => irParaFilaRetorno('processos-prestacao-contas')} style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-prestacao-contas')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer', borderBottom: '1px solid #eee' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Prestação de Contas (PCT) <div style={{ fontSize: '11px', color: '#666' }}>Controle de despesas e retorno</div>
                       </div>
-                      <div onClick={() => irParaFilaRetorno('processos-arquivo')} style={{ padding: '06px 15px', cursor: 'pointer' }} onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} onMouseLeave={(e) => e.target.style.background = '#fff'}>
+                      <div 
+                        onClick={() => irParaFilaRetorno('processos-arquivo')} 
+                        style={{ padding: '06px 15px', cursor: 'pointer' }} 
+                        onMouseEnter={(e) => e.target.style.background = '#f1f1f1'} 
+                        onMouseLeave={(e) => e.target.style.background = '#fff'}
+                      >
                         Arquivo (AQV) <div style={{ fontSize: '11px', color: '#666' }}>Processos finalizados</div>
                       </div>
                     </>
@@ -1061,10 +1104,6 @@ export default function App() {
           <ConfiguracoesPage usuarioLogado={usuarioPerfil} setPaginaAtual={setPaginaAtual} />
         )}
 
-        
-
-        {/* ROTA DE ABERTURA DE PROCESSO (FORÇA REGISTRO NOVO) */}
-        
         {/* ROTA PADRÃO DE PACIENTES */}
         {paginaAtual === 'pacientes' && (
           <PacientePage 
@@ -1110,7 +1149,6 @@ export default function App() {
         {/* ROTAS DE PROCESSOS (FILAS DE TRABALHO DOS 12 SETORES) */}
         {paginaAtual === 'processos-abertura' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaAbertura={true}
              pacienteIdProps={pacienteIdSelecionado}
@@ -1120,7 +1158,6 @@ export default function App() {
 
         {paginaAtual === 'processos-comissao-analise' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaAnalise={true}
              pacienteIdProps={pacienteIdSelecionado}
@@ -1130,7 +1167,6 @@ export default function App() {
 
         {paginaAtual === 'processos-comissao-medica' && (
             <PacientePage 
-            key={paginaAtual}    
             setPaginaAtual={setPaginaAtual} 
             modoFilaMedica={true} 
             pacienteIdProps={pacienteIdSelecionado}
@@ -1150,14 +1186,14 @@ export default function App() {
 
         {paginaAtual === 'processos-servico-social' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaServicoSocial={true}
-             modoFilaAnalise={false} // Garante o isolamento da flag ativa
+             modoFilaAnalise={false}
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
-        {/* 🆕 Adicione este bloco para o Serviço Social */}
         {paginaAtual === 'parecerSocial' && (
           <ParecerSocialPage 
             pacienteId={pacienteIdProps} 
@@ -1167,16 +1203,15 @@ export default function App() {
 
         {paginaAtual === 'processos-agendamento' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaAgendamento={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
-        {/* --- ADICIONE A NOVA ETAPA AQUI --- */}
         {paginaAtual === 'processo-parecer-comissao-medica' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaParecerComissaoMedica={true} 
              pacienteIdProps={pacienteIdSelecionado}
@@ -1186,57 +1221,64 @@ export default function App() {
 
         {paginaAtual === 'processos-retorno' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaRetorno={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
         {paginaAtual === 'processos-ajuda-custo' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaAjudaCusto={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
         {paginaAtual === 'processos-gerencia-tfd' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaGerenciaTfd={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
         {paginaAtual === 'processos-passagem' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaPassagem={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
         {paginaAtual === 'processos-estatistica' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaEstatistica={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
         {paginaAtual === 'processos-prestacao-contas' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaPrestacaoContas={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
         {paginaAtual === 'processos-arquivo' && (
            <PacientePage 
-             key={paginaAtual}
              setPaginaAtual={setPaginaAtual} 
              modoFilaArquivo={true} 
+             pacienteIdProps={pacienteIdSelecionado}
+             setPacienteIdSelecionado={setPacienteIdSelecionado}
            />
         )}
 
